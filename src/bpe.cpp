@@ -1,21 +1,10 @@
 #include "bpe.hpp"
+#include "byte_encoder.hpp"
 #include <climits>
 
 using namespace std;
 
-vector<string> raw_text_to_symbols(const string& text)
-{
-    vector<string> symbols;
 
-    for (int i = 0; i < (int)text.size(); i++)
-    {
-        string one_char = "";
-        one_char = one_char + text[i];
-        symbols.push_back(one_char);
-    }
-
-    return symbols;
-}
 
 vector<string> get_adjacent_pairs(const vector<string>& symbols)
 {
@@ -126,4 +115,11 @@ vector<int> tokens_to_ids(
     }
 
     return res;
+}
+
+vector<string> raw_text_to_symbols(const string& text)
+{
+    vector<int> bytes = text_to_bytes(text);
+    vector<string> symbols = bytes_to_symbols(bytes);
+    return symbols;
 }

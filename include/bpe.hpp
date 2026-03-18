@@ -28,3 +28,5 @@ std::vector<int> tokens_to_ids(
     const std::vector<std::string>& token,
     const std::unordered_map<std::string, int>& vocab
 );
+
+std::vector<std::string> raw_text_to_symbols(const std::string& text);

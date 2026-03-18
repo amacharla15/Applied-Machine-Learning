@@ -2,7 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
-
+#include<vector>
 using namespace std;
 using json = nlohmann::json;
 
@@ -157,3 +157,5 @@ void print_summary(const TokenizerAssets& assets)
         }
     }
 }   
+
+
