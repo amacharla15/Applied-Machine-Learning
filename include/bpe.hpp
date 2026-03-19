@@ -50,3 +50,11 @@ std::vector<std::vector<int>> encode_batch_thread_pool(
     const TokenizerAssets& assets,
     int num_threads
 );
+
+std::vector<std::string> read_lines_from_file(const std::string& path);
+
+std::vector<std::vector<int>> encode_batch_thread_pool_docs(
+    const std::vector<std::string>& texts,
+    const TokenizerAssets& assets,
+    int num_threads
+);

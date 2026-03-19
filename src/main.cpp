@@ -1,9 +1,25 @@
 #include "bpe.hpp"
 #include "tokenizer_assets.hpp"
+#include <algorithm>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <vector>
 
 using namespace std;
+
+static long long count_total_tokens(const vector<vector<int>>& batch_ids)
+{
+    long long total_tokens = 0;
+
+    for (int i = 0; i < (int)batch_ids.size(); i++)
+    {
+        total_tokens += (long long)batch_ids[i].size();
+    }
+
+    return total_tokens;
+}
 
 int main()
 {
@@ -11,18 +27,75 @@ int main()
     load_vocab(assets, "data/vocab.json");
     load_merges(assets, "data/merges.txt");
 
-    vector<vector<int>> batch_ids = encode_batch_thread_pool("data/document.txt", assets, 3);
+    vector<string> texts = read_lines_from_file("data/wikitext_10k.txt");
 
-    cout << "Batch tokenization results:" << endl;
-    for (int i = 0; i < (int)batch_ids.size(); i++)
+    cout << "Loaded documents: " << texts.size() << endl;
+
+    vector<int> thread_counts = {1, 2, 4, 8};
+
+    ofstream fout("results/phase3_benchmark.csv");
+    fout << "threads,trial,elapsed_sec,total_docs,total_tokens,docs_per_sec,tokens_per_sec\n";
+
+    for (int t = 0; t < (int)thread_counts.size(); t++)
     {
-        cout << "Line " << i + 1 << ":" << endl;
-        for (int j = 0; j < (int)batch_ids[i].size(); j++)
+        int num_threads = thread_counts[t];
+        vector<double> elapsed_trials;
+
+        cout << "\nThreads = " << num_threads << endl;
+
+        vector<vector<int>> warmup_ids = encode_batch_thread_pool_docs(texts, assets, num_threads);
+        long long warmup_tokens = count_total_tokens(warmup_ids);
+
+        for (int trial = 1; trial <= 3; trial++)
         {
-            cout << batch_ids[i][j] << " ";
+            auto start = chrono::high_resolution_clock::now();
+
+            vector<vector<int>> batch_ids = encode_batch_thread_pool_docs(texts, assets, num_threads);
+
+            auto end = chrono::high_resolution_clock::now();
+
+            chrono::duration<double> elapsed = end - start;
+            double elapsed_sec = elapsed.count();
+
+            long long total_docs = (long long)batch_ids.size();
+            long long total_tokens = count_total_tokens(batch_ids);
+
+            double docs_per_sec = (double)total_docs / elapsed_sec;
+            double tokens_per_sec = (double)total_tokens / elapsed_sec;
+
+            elapsed_trials.push_back(elapsed_sec);
+
+            cout << "Trial " << trial
+                 << " | elapsed_sec = " << fixed << setprecision(6) << elapsed_sec
+                 << " | total_docs = " << total_docs
+                 << " | total_tokens = " << total_tokens
+                 << " | docs_per_sec = " << docs_per_sec
+                 << " | tokens_per_sec = " << tokens_per_sec
+                 << endl;
+
+            fout << num_threads << ","
+                 << trial << ","
+                 << fixed << setprecision(6) << elapsed_sec << ","
+                 << total_docs << ","
+                 << total_tokens << ","
+                 << docs_per_sec << ","
+                 << tokens_per_sec << "\n";
         }
-        cout << endl;
+
+        sort(elapsed_trials.begin(), elapsed_trials.end());
+        double median_elapsed = elapsed_trials[elapsed_trials.size() / 2];
+
+        double median_docs_per_sec = (double)texts.size() / median_elapsed;
+        double median_tokens_per_sec = (double)warmup_tokens / median_elapsed;
+
+        cout << "Median"
+             << " | elapsed_sec = " << fixed << setprecision(6) << median_elapsed
+             << " | docs_per_sec = " << median_docs_per_sec
+             << " | tokens_per_sec = " << median_tokens_per_sec
+             << endl;
     }
+
+    fout.close();
 
     return 0;
 }

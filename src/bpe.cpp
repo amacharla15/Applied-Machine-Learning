@@ -364,6 +364,7 @@ std::vector<std::vector<int>> encode_batch_parallel(
     return results;
 }
 
+
 std::vector<std::vector<int>> encode_batch_thread_pool(
     const std::string& path,
     const TokenizerAssets& assets,
@@ -371,7 +372,14 @@ std::vector<std::vector<int>> encode_batch_thread_pool(
 )
 {
     std::vector<std::string> texts = read_lines_from_file(path);
-
+    return encode_batch_thread_pool_docs(texts, assets, num_threads);
+}
+std::vector<std::vector<int>> encode_batch_thread_pool_docs(
+    const std::vector<std::string>& texts,
+    const TokenizerAssets& assets,
+    int num_threads
+)
+{
     if (texts.empty())
     {
         return {};
@@ -394,14 +402,8 @@ std::vector<std::vector<int>> encode_batch_thread_pool(
     for (int i = 0; i < (int)texts.size(); i++)
     {
         pool.enqueue([&texts, &results, &assets, i]()
-{
-            std::cout << "Worker " << std::this_thread::get_id()
-                    << " processing line " << i << std::endl;
-
+        {
             results[i] = encode_text(texts[i], assets);
-
-            std::cout << "Worker " << std::this_thread::get_id()
-                    << " finished line " << i << std::endl;
         });
     }
 
