@@ -58,3 +58,26 @@ std::vector<std::vector<int>> encode_batch_thread_pool_docs(
     const TokenizerAssets& assets,
     int num_threads
 );
+
+
+std::vector<int> encode_text_no_cache(const std::string& text, const TokenizerAssets& assets);
+
+std::vector<int> encode_text_cached(const std::string& text, const TokenizerAssets& assets);
+
+std::vector<std::vector<int>> encode_batch_thread_pool_docs_no_cache(
+    const std::vector<std::string>& texts,
+    const TokenizerAssets& assets,
+    int num_threads
+);
+
+std::vector<std::vector<int>> encode_batch_thread_pool_docs_cache(
+    const std::vector<std::string>& texts,
+    const TokenizerAssets& assets,
+    int num_threads
+);
+
+void reset_cache_stats();
+
+long long get_cache_hits();
+
+long long get_cache_misses();

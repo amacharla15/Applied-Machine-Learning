@@ -10,6 +10,8 @@
 #include <pcre2.h>
 #include "thread_pool.hpp"
 
+#include <atomic>
+
 using namespace std;
 
 vector<string> raw_text_to_symbols(const string& text)
@@ -198,6 +200,26 @@ std::vector<std::string> simple_split_text(const std::string& text)
 
     return result;
 }
+static std::atomic<long long> g_cache_hits(0);
+static std::atomic<long long> g_cache_misses(0);
+
+static thread_local std::unordered_map<std::string, std::vector<int>> g_chunk_cache;
+
+void reset_cache_stats()
+{
+    g_cache_hits.store(0, std::memory_order_relaxed);
+    g_cache_misses.store(0, std::memory_order_relaxed);
+}
+
+long long get_cache_hits()
+{
+    return g_cache_hits.load(std::memory_order_relaxed);
+}
+
+long long get_cache_misses()
+{
+    return g_cache_misses.load(std::memory_order_relaxed);
+}
 vector<int> encode_chunk(const string& chunk, const TokenizerAssets& assets)
 {
     vector<string> symbols = raw_text_to_symbols(chunk);
@@ -206,7 +228,25 @@ vector<int> encode_chunk(const string& chunk, const TokenizerAssets& assets)
     return ids;
 }
 
-vector<int> encode_text(const string& text, const TokenizerAssets& assets)
+static std::vector<int> encode_chunk_cached(const std::string& chunk, const TokenizerAssets& assets)
+{
+    auto it = g_chunk_cache.find(chunk);
+
+    if (it != g_chunk_cache.end())
+    {
+        g_cache_hits.fetch_add(1, std::memory_order_relaxed);
+        return it->second;
+    }
+
+    g_cache_misses.fetch_add(1, std::memory_order_relaxed);
+
+    std::vector<int> ids = encode_chunk(chunk, assets);
+    g_chunk_cache[chunk] = ids;
+
+    return ids;
+}
+
+vector<int> encode_text_no_cache(const string& text, const TokenizerAssets& assets)
 {
     vector<string> chunks = simple_split_text(text);
     vector<int> result;
@@ -222,6 +262,29 @@ vector<int> encode_text(const string& text, const TokenizerAssets& assets)
     }
 
     return result;
+}
+
+vector<int> encode_text_cached(const string& text, const TokenizerAssets& assets)
+{
+    vector<string> chunks = simple_split_text(text);
+    vector<int> result;
+
+    for (int i = 0; i < (int)chunks.size(); i++)
+    {
+        vector<int> chunk_ids = encode_chunk_cached(chunks[i], assets);
+
+        for (int j = 0; j < (int)chunk_ids.size(); j++)
+        {
+            result.push_back(chunk_ids[j]);
+        }
+    }
+
+    return result;
+}
+
+vector<int> encode_text(const string& text, const TokenizerAssets& assets)
+{
+    return encode_text_cached(text, assets);
 }
 
 
@@ -374,7 +437,7 @@ std::vector<std::vector<int>> encode_batch_thread_pool(
     std::vector<std::string> texts = read_lines_from_file(path);
     return encode_batch_thread_pool_docs(texts, assets, num_threads);
 }
-std::vector<std::vector<int>> encode_batch_thread_pool_docs(
+std::vector<std::vector<int>> encode_batch_thread_pool_docs_no_cache(
     const std::vector<std::string>& texts,
     const TokenizerAssets& assets,
     int num_threads
@@ -403,11 +466,58 @@ std::vector<std::vector<int>> encode_batch_thread_pool_docs(
     {
         pool.enqueue([&texts, &results, &assets, i]()
         {
-            results[i] = encode_text(texts[i], assets);
+            results[i] = encode_text_no_cache(texts[i], assets);
         });
     }
 
     pool.wait_for_all();
 
     return results;
+}
+
+std::vector<std::vector<int>> encode_batch_thread_pool_docs_cache(
+    const std::vector<std::string>& texts,
+    const TokenizerAssets& assets,
+    int num_threads
+)
+{
+    if (texts.empty())
+    {
+        return {};
+    }
+
+    if (num_threads <= 0)
+    {
+        num_threads = 1;
+    }
+
+    if (num_threads > (int)texts.size())
+    {
+        num_threads = (int)texts.size();
+    }
+
+    std::vector<std::vector<int>> results(texts.size());
+
+    ThreadPool pool((std::size_t)num_threads);
+
+    for (int i = 0; i < (int)texts.size(); i++)
+    {
+        pool.enqueue([&texts, &results, &assets, i]()
+        {
+            results[i] = encode_text_cached(texts[i], assets);
+        });
+    }
+
+    pool.wait_for_all();
+
+    return results;
+}
+
+std::vector<std::vector<int>> encode_batch_thread_pool_docs(
+    const std::vector<std::string>& texts,
+    const TokenizerAssets& assets,
+    int num_threads
+)
+{
+    return encode_batch_thread_pool_docs_cache(texts, assets, num_threads);
 }
