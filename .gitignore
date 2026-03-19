@@ -1,2 +1,3 @@
 phase1_test
 *.o
+.venv
